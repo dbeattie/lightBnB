@@ -18,33 +18,20 @@ const pool = new Pool({
  * @return {Promise<{}>} A promise to the user.
  */
 const getUserWithEmail = function(email) {
-const emailQuery = `
+  const queryString = `
     SELECT *
     FROM users
     WHERE email = $1;
-  `; 
-  return pool.query(emailQuery, [email])
-  .then(res => {
-    if (res.rows) {
-      return res.rows[0];
-    } else {
-      return null;
-    }
-  });
-}
-
-/*const getUserWithEmail = function(email) {
-  let user;
-  for (const userId in users) {
-    user = users[userId];
-    if (user.email.toLowerCase() === email.toLowerCase()) {
-      break;
-    } else {
-      user = null;
-    }
-  }
-  return Promise.resolve(user);
-}*/
+  `;
+  return pool.query(queryString, [email])
+    .then(res => {
+      if (res.rows) {
+        return res.rows[0];
+      } else {
+        return null;
+      }
+    });
+};
 exports.getUserWithEmail = getUserWithEmail;
 
 /**
@@ -53,12 +40,12 @@ exports.getUserWithEmail = getUserWithEmail;
  * @return {Promise<{}>} A promise to the user.
  */
 const getUserWithId = function(id) {
-  const idQuery = `
+  const queryString = `
       SELECT *
       FROM users
       WHERE id = $1;
-    `; 
-    return pool.query(idQuery, [id])
+    `;
+  return pool.query(queryString, [id])
     .then(res => {
       if (res.rows) {
         return res.rows[0];
@@ -66,11 +53,7 @@ const getUserWithId = function(id) {
         return null;
       }
     });
-  }
-
- /*const getUserWithId = function(id) {
-  return Promise.resolve(users[id]);
-}*/
+};
 exports.getUserWithId = getUserWithId;
 
 
@@ -80,29 +63,22 @@ exports.getUserWithId = getUserWithId;
  * @return {Promise<{}>} A promise to the user.
  */
 const addUser = function(user) {
-  const addUserQuery = `
+  const queryString = `
   INSERT INTO users (name, email, password)
   VALUES ($1, $2, $3)
   RETURNING *;
   `;
   const userInfo = [user.name, user.email, user.password];
   
-  return pool.query(addUserQuery, userInfo)
-  .then(res => {
-  if (res.rows) {
-    return res.rows[0];
-  } else {
-    return null;
-  }
-  });
-}
-
-/*const addUser =  function(user) {
-  const userId = Object.keys(users).length + 1;
-  user.id = userId;
-  users[userId] = user;
-  return Promise.resolve(user);
-}*/
+  return pool.query(queryString, userInfo)
+    .then(res => {
+      if (res.rows) {
+        return res.rows[0];
+      } else {
+        return null;
+      }
+    });
+};
 exports.addUser = addUser;
 
 /// Reservations
@@ -113,7 +89,7 @@ exports.addUser = addUser;
  * @return {Promise<[{}]>} A promise to the reservations.
  */
 const getAllReservations = function(guest_id, limit = 10) {
-  const reservationQuery = `
+  const queryString = `
     SELECT reservations.*, properties.*, avg(property_reviews.rating) AS average_rating
     FROM reservations
     JOIN properties ON reservations.property_id = properties.id
@@ -125,19 +101,15 @@ const getAllReservations = function(guest_id, limit = 10) {
   `;
 
   const values = [guest_id, limit];
-  return pool.query(reservationQuery, values)
-  .then (res => {
-    if (res.rows) {
-      return res.rows;
-    } else {
-      return null;
-    }
-  });
-}
-
- /*const getAllReservations = function(guest_id, limit = 10) {
-  return getAllProperties(null, 2);
-}*/
+  return pool.query(queryString, values)
+    .then(res => {
+      if (res.rows) {
+        return res.rows;
+      } else {
+        return null;
+      }
+    });
+};
 exports.getAllReservations = getAllReservations;
 
 /// Properties
@@ -149,21 +121,61 @@ exports.getAllReservations = getAllReservations;
  * @return {Promise<[{}]>}  A promise to the properties.
  */
 const getAllProperties = function(options, limit = 10) {
-  return pool.query(`
-  SELECT * FROM properties
-  LIMIT $1
-  `, [limit])
-  .then(res => res.rows);
-}
-/* const getAllProperties = function(options, limit = 10) {
-  const limitedProperties = {};
-  for (let i = 1; i <= limit; i++) {
-    limitedProperties[i] = properties[i];
-  }
-  return Promise.resolve(limitedProperties);
-}*/ 
-exports.getAllProperties = getAllProperties;
+  const queryParams = [];
+  let queryString = `
+    SELECT properties.*, avg(property_reviews.rating) as average_rating
+    FROM properties
+    FULL OUTER JOIN property_reviews ON properties.id = property_id
+  `;
 
+  if (options.city) {
+    queryParams.push(`%${options.city}%`);
+    if (queryParams.length > 1) {
+      queryString += `AND `;
+    } else {
+      queryString += `WHERE `;
+    }
+    queryString += `city ILIKE $${queryParams.length} `
+  }
+
+  if (options.owner_id) {
+    queryParams.push(options.owner_id);
+    if (queryParams.length > 1) {
+      queryString += `AND `;
+    } else {
+      queryString += `WHERE `;
+    }
+    queryString += `owner_id = $${queryParams.length} `;
+  }
+  
+  if (options.minimum_price_per_night && options.maximum_price_per_night) {
+    // multiply by 100 due to unit being in cents (always save currency as integer not float!!!)
+    queryParams.push(options.minimum_price_per_night * 100);
+    queryParams.push(options.maximum_price_per_night * 100);
+    if (queryParams.length > 2) {
+      queryString += `AND `;
+    } else {
+      queryString += `WHERE `;
+    }
+    queryString += `cost_per_night >= $${queryParams.length - 1} AND cost_per_night <= $${queryParams.length} `
+  }
+
+  if (options.minimum_rating) {
+    queryParams.push(options.minimum_rating);
+    queryString += `GROUP BY properties.id HAVING AVG(property_reviews.rating) >= $${queryParams.length} ORDER BY cost_per_night `;
+  } else {
+    queryString += `GROUP BY properties.id ORDER BY cost_per_night `;
+  }
+
+  queryParams.push(limit);
+  queryString += `LIMIT $${queryParams.length};`;
+  
+  console.log(queryString, queryParams);
+  
+  return pool.query(queryString, queryParams)
+    .then(res => res.rows);
+};
+exports.getAllProperties = getAllProperties;
 
 /**
  * Add a property to the database
@@ -175,5 +187,5 @@ const addProperty = function(property) {
   property.id = propertyId;
   properties[propertyId] = property;
   return Promise.resolve(property);
-}
+};
 exports.addProperty = addProperty;
