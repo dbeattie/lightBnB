@@ -1,14 +1,7 @@
 const properties = require('./json/properties.json');
 const users = require('./json/users.json');
 
-const { Pool } = require('pg');
-
-const pool = new Pool({
-  user: 'vagrant',
-  password: '123',
-  host: 'localhost',
-  database: 'lightbnb'
-});
+const db = require('./db');
 
 /// Users
 
@@ -23,7 +16,7 @@ const getUserWithEmail = function(email) {
     FROM users
     WHERE email = $1;
   `;
-  return pool.query(queryString, [email])
+  return db.query(queryString, [email])
     .then(res => {
       if (res.rows) {
         return res.rows[0];
@@ -45,7 +38,7 @@ const getUserWithId = function(id) {
       FROM users
       WHERE id = $1;
     `;
-  return pool.query(queryString, [id])
+  return db.query(queryString, [id])
     .then(res => {
       if (res.rows) {
         return res.rows[0];
@@ -70,7 +63,7 @@ const addUser = function(user) {
   `;
   const userInfo = [user.name, user.email, user.password];
   
-  return pool.query(queryString, userInfo)
+  return db.query(queryString, userInfo)
     .then(res => {
       if (res.rows) {
         return res.rows[0];
@@ -101,7 +94,7 @@ const getAllReservations = function(guest_id, limit = 10) {
   `;
 
   const values = [guest_id, limit];
-  return pool.query(queryString, values)
+  return db.query(queryString, values)
     .then(res => {
       if (res.rows) {
         return res.rows;
@@ -170,7 +163,7 @@ const getAllProperties = function(options, limit = 10) {
   queryParams.push(limit);
   queryString += `LIMIT $${queryParams.length};`;
   
-  return pool.query(queryString, queryParams)
+  return db.query(queryString, queryParams)
     .then(res => res.rows);
 };
 exports.getAllProperties = getAllProperties;
@@ -188,7 +181,7 @@ const addProperty = function(property) {
     RETURNING *;
   `;
 
-  return pool.query(queryString, propertyKeyValues)
+  return db.query(queryString, propertyKeyValues)
     .then(res => {
       if (res.rows) {
         return res.rows[0];
@@ -196,7 +189,6 @@ const addProperty = function(property) {
         return null;
       }
     });
-  
 };
 
 exports.addProperty = addProperty;
